@@ -96,6 +96,7 @@ export function createSlicer({ base = './', profiles = null, workerUrl = null } 
           layer: normalizeLayer(input.layer ?? '0.2'),
           strong: Boolean(input.strong),
           material: input.material ?? 'pla',
+          settings: input.settings ?? null,
         },
       });
     });
