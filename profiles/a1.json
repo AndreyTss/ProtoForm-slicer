@@ -4088,7 +4088,7 @@
     "20"
    ],
    "filament_density": [
-    "1.04"
+    "1.269"
    ],
    "filament_deretraction_speed": [
     "nil"
@@ -4416,7 +4416,7 @@
    "abs": "0cccfc093b2a01c6",
    "asa": "322cffed499ca38b",
    "flex": "7d76253a98df400e",
-   "pa6gf": "dd8d41c01921cd11"
+   "pa6gf": "5de7b3f7eb429da2"
   }
  }
 }

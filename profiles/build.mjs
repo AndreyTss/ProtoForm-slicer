@@ -98,6 +98,10 @@ const PLATE = { curr_bed_type: machineModel.default_bed_type };
 const process_ = Object.fromEntries(Object.entries(PROCESS).map(([k, n]) => [k, flatten('process', n)]));
 const filament = Object.fromEntries(Object.entries(FILAMENT).map(([k, n]) => [k, flatten('filament', n)]));
 
+// pa6gf — SUNLU PA6-GF (25% стекловолокна), а ближайший профиль с углеволокном:
+// плотность из паспорта производителя, иначе масса выходит на четверть меньше.
+filament.pa6gf.filament_density = ['1.269'];
+
 // Проверки того, на что опирается мост: один экструдер и один вариант пластика.
 if (machine.nozzle_diameter.length !== 1) throw new Error('ожидался один экструдер');
 for (const [k, f] of Object.entries(filament)) {
