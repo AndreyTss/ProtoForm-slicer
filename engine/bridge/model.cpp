@@ -189,6 +189,14 @@ void load_model(const WorkDir &dir, const JobInput &input, PreparedModel &out)
                                           LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, &plate_data,
                                           &project_presets, &is_bbl_3mf, &file_version);
         release();
+        // Чтение 3MF заводит временную папку резервной копии. Деструктор Model
+        // отдал бы её менеджеру копий окна программы, а в WebAssembly это
+        // обрывает работу (std::terminate). Удаляем папку сами и отвязываем путь.
+        try {
+            out.model.remove_backup_path_if_exist();
+        } catch (const std::exception &) {
+            out.model.set_backup_path("detach");
+        }
     } catch (const std::bad_alloc &) {
         release();
         throw;

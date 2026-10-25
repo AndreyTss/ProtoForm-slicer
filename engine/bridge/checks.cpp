@@ -5,7 +5,8 @@
 // GCode::collect_layers_to_print пишет «empty layers … can't be printed»), или
 // на первом слое нет ничего.
 // thin_walls — в слое есть остров сечения, внутри которого нет ни одной
-// траектории: место тоньше линии сопла, оно не напечатается.
+// траектории: место тоньше линии сопла, оно не напечатается. Считается, только
+// если такое есть хотя бы в трёх слоях одной детали.
 #include "internal.hpp"
 
 #include <libslic3r/ExtrusionEntity.hpp>
@@ -24,6 +25,9 @@ namespace {
 // Порог для thin_walls: потерянный объём меньше этого считаем шумом
 // (обрезки углов, мелкие острова на кромках).
 constexpr double LOST_VOLUME_MM3 = 1.0;
+// Тонкая стенка тянется через слои. Потери в одном-двух слоях — обрезок
+// скруглённой кромки на верхнем слое, его не печатает и OrcaSlicer.
+constexpr int LOST_MIN_LAYERS = 3;
 // Острова меньше этой площади не проверяем, мм².
 constexpr double MIN_ISLAND_MM2 = 0.05;
 
@@ -101,42 +105,55 @@ void collect_points(const ExtrusionEntity &entity, Points &out)
             collect_points(p, out);
 }
 
-double lost_volume(const PrintObject &object)
+struct Lost
+{
+    double volume = 0.; // мм³
+    int    layers = 0;  // слоёв, где что-то не напечатается
+};
+
+Lost lost_volume(const PrintObject &object)
 {
     const double min_area = MIN_ISLAND_MM2 / (SCALING_FACTOR * SCALING_FACTOR);
-    double       lost     = 0.;
+    Lost         lost;
     Points       points;
     for (const Layer *layer : object.layers()) {
         points.clear();
         for (const LayerRegion *layerm : layer->regions()) {
             collect_points(layerm->perimeters, points);
             collect_points(layerm->fills, points);
+            // Узкие места Orca заполняет отдельно от периметров и заливки.
+            collect_points(layerm->thin_fills, points);
         }
+        bool lost_here = false;
         for (const ExPolygon &island : layer->lslices) {
             const double area = island.area();
             if (area < min_area)
                 continue;
             const BoundingBox box = get_extents(island.contour);
             const bool covered = std::any_of(points.begin(), points.end(), [&](const Point &p) { return box.contains(p) && island.contains(p); });
-            if (!covered)
-                lost += area * SCALING_FACTOR * SCALING_FACTOR * layer->height;
+            if (!covered) {
+                lost.volume += area * SCALING_FACTOR * SCALING_FACTOR * layer->height;
+                lost_here = true;
+            }
         }
+        if (lost_here)
+            ++lost.layers;
     }
-    return lost * double(object.instances().size());
+    lost.volume *= double(object.instances().size());
+    return lost;
 }
 
 } // namespace
 
 void check_layers(const Print &print, Warnings &warnings)
 {
-    double lost = 0.;
     for (const PrintObject *object : print.objects()) {
         if (floating(*object))
             warnings.floating_parts = true;
-        lost += lost_volume(*object);
+        const Lost lost = lost_volume(*object);
+        if (lost.volume >= LOST_VOLUME_MM3 && lost.layers >= LOST_MIN_LAYERS)
+            warnings.thin_walls = true;
     }
-    if (lost >= LOST_VOLUME_MM3)
-        warnings.thin_walls = true;
 }
 
 } // namespace pf
