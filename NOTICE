@@ -1,0 +1,9 @@
+protoform-slicer
+Copyright (C) 2026 Andrey Tsurkan
+
+Licensed under the GNU Affero General Public License, version 3 (LICENSE).
+
+This work builds the slicing core of OrcaSlicer
+(https://github.com/OrcaSlicer/OrcaSlicer, AGPL-3.0), which derives from
+Bambu Studio, PrusaSlicer and Slic3r. OrcaSlicer is included unmodified as
+the submodule `orca/`.

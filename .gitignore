@@ -1,0 +1,14 @@
+# Сборка и результаты
+build/
+build-*/
+out/
+dist/
+# Зависимости, собранные под WebAssembly
+deps-build/
+deps-src/
+# Обвязка и замеры
+node_modules/
+bench/models/
+bench/results/
+# Документация живёт вне этого репозитория
+docs/
