@@ -12,50 +12,58 @@ let ready = null; // Promise<{ engine, profiles }>
 // Доля шкалы, которую занимает загрузка движка, когда он грузится в этой задаче.
 const DOWNLOAD_SHARE = 15;
 
-/** Скачивает файл, сообщая долю скачанного (если сервер назвал размер). */
-async function fetchWithProgress(url, onFraction) {
+/**
+ * Скачивает и компилирует движок одним потоком: браузер компилирует модуль, пока
+ * он ещё качается, а не после. Доля скачанного идёт в onFraction.
+ */
+async function instantiateStreaming(url, imports, onFraction) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const total = Number(res.headers.get('content-length')) || 0;
-  if (!res.body || !total) {
-    const buf = await res.arrayBuffer();
-    onFraction(1);
-    return buf;
+  let body = res.body;
+  if (body && total) {
+    let got = 0;
+    body = body.pipeThrough(new TransformStream({
+      transform(chunk, ctrl) {
+        got += chunk.length;
+        onFraction(Math.min(got / total, 1));
+        ctrl.enqueue(chunk);
+      },
+    }));
   }
-  const reader = res.body.getReader();
-  const chunks = [];
-  let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    got += value.length;
-    onFraction(Math.min(got / total, 1));
-  }
-  const out = new Uint8Array(got);
-  let at = 0;
-  for (const c of chunks) { out.set(c, at); at += c.length; }
-  return out.buffer;
+  const wasmRes = new Response(body, { headers: { 'Content-Type': 'application/wasm' } });
+  if (WebAssembly.instantiateStreaming) return WebAssembly.instantiateStreaming(wasmRes, imports);
+  return WebAssembly.instantiate(await wasmRes.arrayBuffer(), imports);
 }
 
 function load(base, profilesUrl, report) {
   if (ready) return ready;
   ready = (async () => {
     report('download', 0);
-    const [wasm, profiles, mod] = await Promise.all([
-      fetchWithProgress(base + 'engine.wasm', (f) => report('download', Math.floor(f * (DOWNLOAD_SHARE - 1)))),
+    const [profiles, mod] = await Promise.all([
       fetch(profilesUrl).then((r) => {
         if (!r.ok) throw new Error(`${profilesUrl}: HTTP ${r.status}`);
         return r.json();
       }),
       import(/* @vite-ignore */ base + 'engine.mjs'),
     ]);
-    const engine = await mod.default({
-      wasmBinary: wasm,
-      locateFile: (path) => base + path,
-      print: () => {},
-      printErr: () => {},
-    });
+    // Ошибку своего загрузчика модуль Emscripten не пробрасывает: ловим её отдельно.
+    let failLoad;
+    const loadFailed = new Promise((_, reject) => (failLoad = reject));
+    const engine = await Promise.race([
+      loadFailed,
+      mod.default({
+        // Свой загрузчик вместо встроенного: ход скачивания и компиляция на лету.
+        instantiateWasm(imports, done) {
+          instantiateStreaming(base + 'engine.wasm', imports, (f) => report('download', Math.floor(f * (DOWNLOAD_SHARE - 1))))
+            .then((r) => done(r.instance, r.module), failLoad);
+          return {};
+        },
+        locateFile: (path) => base + path,
+        print: () => {},
+        printErr: () => {},
+      }),
+    ]);
     report('download', DOWNLOAD_SHARE);
     return { engine, profiles };
   })();
